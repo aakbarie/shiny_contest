@@ -20,6 +20,8 @@ def generate_shiny_app_code(description, data, use_pygwalker):
     prompt = f"""
     Create a fully functional and executable Shiny for Python app using the Shiny framework in Python.
     The generated code should only use the Shiny for Python framework (do not use Streamlit or any other framework).
+    Avoid using unsupported functions such as 'panel_sidebar' or 'panel_main'. Instead, use standard layout components 
+    like 'ui.row()', 'ui.column()', 'ui.layout_sidebar()', or other compatible elements available in Shiny for Python.
     Include necessary imports, UI setup, server logic, and a proper execution block. The generated app should be ready to run directly.
     Ensure that all required arguments are provided, such as 'choices' for input fields like input_selectize().
     Description: {description}
@@ -41,7 +43,7 @@ def extract_python_code(response):
         code = response.strip()  # Default to entire response if no code fences found
     return code
 
-# Main app UI with corrected styling and spinner integration
+# Main app UI with corrected styling and layout
 app_ui = ui.page_fluid(
     ui.tags.style(
         f"""
@@ -58,13 +60,6 @@ app_ui = ui.page_fluid(
         }}
         .card {{
             border-color: {COLORS['secondary']};
-        }}
-        .file-input {{
-            background-color: {COLORS['primary']};
-            color: {COLORS['background']};
-        }}
-        .text-area {{
-            color: {COLORS['text']};
         }}
         .verbatim-output {{
             background-color: {COLORS['background']};
@@ -97,38 +92,28 @@ app_ui = ui.page_fluid(
         }}
         """
     ),
-    ui.tags.div(
-        ui.input_file("file1", "Choose CSV File", accept=[".csv"]),
-        class_="file-input"
-    ),
-    ui.tags.div(
-        ui.input_text_area("description", "Describe the dashboard you want:"),
-        class_="text-area"
-    ),
-    ui.input_checkbox("use_pygwalker", "Include PyGWalker for interactive exploration", value=True),
-    ui.input_action_button("generate", "Generate Dashboard", class_="btn"),
-    ui.tags.div(
-        ui.output_text("app_description"),
-        class_="description-box"  # Add description box class for styling
-    ),
-    ui.tags.div(
-        ui.output_text_verbatim("generated_code"),
-        class_="verbatim-output"
-    ),
-    ui.output_ui("dynamic_app"),
-    ui.tags.div(
-        ui.tags.div(
-            class_="spinner-border text-primary",
-            role="status"
+    ui.row(
+        ui.column(
+            4,
+            ui.input_file("file1", "Choose CSV File", accept=[".csv"]),
+            ui.input_text_area("description", "Describe the dashboard you want:"),
+            ui.input_checkbox("use_pygwalker", "Include PyGWalker for interactive exploration", value=True),
+            ui.input_action_button("generate", "Generate Dashboard", style=f"background-color: {COLORS['accent']}; color: {COLORS['background']};"),
         ),
-        ui.tags.div(
-            "Scanning subspace for chronitron particles",
-            class_="spinner-text"
-        ),
-        id="spinner-container",
-        class_="spinner-container"
+        ui.column(
+            8,
+            ui.tags.div(ui.output_text("app_description"), class_="description-box"),
+            ui.tags.div(ui.output_text_verbatim("generated_code"), class_="verbatim-output"),
+            ui.output_ui("dynamic_app"),
+            ui.tags.div(
+                ui.tags.div(class_="spinner-border text-primary", role="status"),
+                ui.tags.div("Scanning subspace for chronitron particles", class_="spinner-text"),
+                id="spinner-container",
+                class_="spinner-container"
+            ),
+            ui.download_button("download_app", "Download Generated Shiny App"),
+        )
     ),
-    ui.download_button("download_app", "Download Generated Shiny App"),
     ui.tags.script(
         """
         Shiny.addCustomMessageHandler("show_spinner", function(message) {
@@ -169,6 +154,11 @@ def server(input, output, session):
             response = generate_shiny_app_code(input.description(), data(), input.use_pygwalker())
             full_response.set(response)  # Store the full response
             code = extract_python_code(response)  # Extract the Python code for download
+
+            # Validate and clean the generated code to ensure compatibility
+            if "panel_sidebar" in code:
+                code = code.replace("panel_sidebar", "ui.column")
+
             file_name = file_info["name"].rsplit('.', 1)[0] + "_app.py"
             generated_file_path.set(file_name)
             with open(file_name, 'w') as file:
