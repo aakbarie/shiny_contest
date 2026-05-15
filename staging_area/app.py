@@ -1,7 +1,7 @@
 import pandas as pd
 from shiny import App, reactive, render, ui
 from langchain_community.llms import Ollama
-import subprocess
+import tempfile
 import os
 
 # Define color palette based on Prometheus
@@ -16,68 +16,105 @@ COLORS = {
 # Initialize Ollama LLM with the deepseek-coder-v2 model
 llm = Ollama(model="deepseek-coder-v2")
 
-# Function to generate Shiny for Python app code using LangChain and Ollama
-def generate_shiny_app_code(description, data, use_pygwalker):
+def generate_tableau_like_streamlit_code(description, data, use_pygwalker):
     prompt = f"""
-    Create a fully functional and executable Shiny for Python app using the Shiny framework in Python.
-    The generated code should include all necessary imports, UI setup, server logic, and a proper execution block.
-    Ensure to use correct imports such as pandas, plotly.express for plotting, and explicit imports for Shiny components.
-    Use 'from shiny import App, reactive, render, ui' instead of wildcard imports.
-    Avoid using unnecessary or incorrect imports such as mimetypes or render from pygwalker if not used.
-    The app should display the data in a table, provide summary statistics, and generate a bar plot for missing data analysis.
-    Include the basic structure:
-    - Import necessary libraries.
-    - Define the UI layout.
-    - Implement the server logic with reactive elements.
-    - Ensure proper activation of the Shiny app using an if __name__ == "__main__" block.
+    Create a Streamlit app that resembles a Tableau dashboard. The app should be fully functional, interactive, and visually appealing. Use the following structure and guidelines:
+
+    1. Imports:
+       import streamlit as st
+       import pandas as pd
+       import plotly.express as px
+       import plotly.graph_objects as go
+       from plotly.subplots import make_subplots
+       import pygwalker as pyg (if use_pygwalker is True)
+
+    2. Page Configuration:
+       - Set a wide layout and a meaningful title
+
+    3. Data Loading:
+       - Use st.file_uploader for CSV files
+       - Include sample data if no file is uploaded
+
+    4. Sidebar:
+       - Add filters for key variables using st.sidebar
+       - Include a date range selector if applicable
+
+    5. Main Dashboard:
+       - Create a multi-column layout using st.columns
+       - Include the following elements:
+         a. Key Performance Indicators (KPIs) at the top
+         b. Time series chart (if time data is available)
+         c. Bar chart for categorical comparisons
+         d. Scatter plot for correlation analysis
+         e. Pie or donut chart for composition analysis
+         f. Heatmap for multi-variable comparison
+       - Make charts interactive with click events and cross-filtering
+
+    6. Advanced Features:
+       - Implement drill-down functionality
+       - Add tooltips with detailed information
+       - Create a dynamic title that updates based on selections
+
+    7. Styling:
+       - Use a cohesive color scheme
+       - Add descriptive titles and labels to all charts
+       - Ensure consistent formatting of numbers and dates
+
+    8. Performance Optimization:
+       - Use st.cache for data loading and processing
+       - Implement efficient filtering mechanisms
+
+    9. Error Handling:
+       - Include try-except blocks for robust error management
+
+    10. PyGWalker Integration (if use_pygwalker is True):
+        - Add a separate tab or section for PyGWalker exploration
+
     Description: {description}
     Data columns: {', '.join(data.columns)}
     First few rows of data: {data.head().to_json(orient='records')}
-    {'Include PyGWalker for interactive data exploration using pyg.walk() with the provided DataFrame.' if use_pygwalker else ''}
-    Provide only the Python code necessary to run the Shiny for Python app.
+    Use PyGWalker: {'Yes' if use_pygwalker else 'No'}
+
+    Provide only the Python code necessary to run this Tableau-like Streamlit dashboard.
     """
     response = llm.invoke(prompt)
     return response
 
-# Function to extract and clean Python code from the generated response
 def extract_and_clean_python_code(response):
-    # Extract the code between code fences
     code_start = response.find("```python")
     code_end = response.rfind("```")
     if code_start != -1 and code_end != -1:
         code = response[code_start + len("```python"):code_end].strip()
     else:
-        code = response.strip()  # Default to the entire response if no code fences are found
-
-    # Remove comments or any unintended print statements
+        code = response.strip()
     cleaned_code = "\n".join(line for line in code.splitlines() if not line.strip().startswith("#"))
-    print("Cleaned Generated Code:", cleaned_code)  # Debugging line to inspect the cleaned code
     return cleaned_code
 
-# Function to run the generated code in a new terminal with the correct Conda environment
-def run_code_in_new_terminal(code, env_name="shiny_app_env"):
-    try:
-        # Save the generated code to a temporary file
-        temp_code_path = "/Volumes/macStorage/my projects/shiny_contest/staging_area/generated_app.py"
-        with open(temp_code_path, "w") as file:
-            file.write(code)
+def post_process_code(code):
+    # Ensure correct PyGWalker usage
+    code = code.replace("pygwalker.walk(", "pyg.walk(")
+    
+    # Add custom CSS for Tableau-like styling
+    custom_css = """
+    <style>
+    .stApp {
+        background-color: #F0F2F6;
+    }
+    .stPlotlyChart {
+        background-color: white;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px 0 rgba(0,0,0,0.16);
+    }
+    .st-emotion-cache-1gulkj5 {
+        background-color: #F0F2F6;
+    }
+    </style>
+    """
+    # Embed CSS directly using st.markdown without being part of file handling
+    code = f"st.markdown('''{custom_css}''', unsafe_allow_html=True)\n" + code
+    
+    return code
 
-        # AppleScript command to open a new Terminal window and execute the script
-        applescript_command = f'''
-        tell application "Terminal"
-            do script "conda activate {env_name} && python \\{temp_code_path}\\ 2>&1 | tee /tmp/generated_app_error.log"
-        end tell
-        '''
-
-        # Execute the AppleScript command
-        subprocess.run(["osascript", "-e", applescript_command], check=True)
-        return "Generated app is running in a new terminal. Check /tmp/generated_app_error.log for any errors."
-    except subprocess.CalledProcessError as e:
-        return f"An error occurred during app execution: {e.stderr}"
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
-
-# Main app UI with corrected styling and layout
 app_ui = ui.page_fluid(
     ui.tags.style(
         f"""
@@ -130,9 +167,9 @@ app_ui = ui.page_fluid(
         ui.column(
             4,
             ui.input_file("file1", "Choose CSV File", accept=[".csv"]),
-            ui.input_text_area("description", "Describe the dashboard you want:"),
+            ui.input_text_area("description", "Describe the SpectraCore dashboard you want:"),
             ui.input_checkbox("use_pygwalker", "Include PyGWalker for interactive exploration", value=True),
-            ui.input_action_button("generate", "Generate Dashboard", style=f"background-color: {COLORS['accent']}; color: {COLORS['background']};"),
+            ui.input_action_button("generate", "Generate SpectraCore Dashboard", style=f"background-color: {COLORS['accent']}; color: {COLORS['background']};"),
         ),
         ui.column(
             8,
@@ -141,11 +178,11 @@ app_ui = ui.page_fluid(
             ui.output_ui("dynamic_app"),
             ui.tags.div(
                 ui.tags.div(class_="spinner-border text-primary", role="status"),
-                ui.tags.div("Scanning subspace for chronitron particles", class_="spinner-text"),
+                ui.tags.div("SpectraCore is generating your Tableau-like dashboard...", class_="spinner-text"),
                 id="spinner-container",
                 class_="spinner-container"
             ),
-            ui.download_button("download_app", "Download Generated Shiny App"),
+            ui.download_button("download_app", "Download SpectraCore Streamlit App"),
         )
     ),
     ui.tags.script(
@@ -162,45 +199,45 @@ app_ui = ui.page_fluid(
     )
 )
 
-# Server logic
 def server(input, output, session):
     data = reactive.Value(None)
     loading = reactive.Value(False)
+    generated_code = reactive.Value("")
     generated_file_path = reactive.Value(None)
-    full_response = reactive.Value("")  # Store the full response for display
 
-    # Show loading spinner while generating the code
     @reactive.Effect
     @reactive.event(input.generate)
     async def show_spinner():
         loading.set(True)
         await session.send_custom_message("show_spinner", {"show": True})
 
-    # Function to generate code and handle errors
     @output
     @render.text
     @reactive.event(input.generate)
-    async def generated_code():
+    async def generated_code_view():
         if input.file1() is None:
             return "Please upload a CSV file first."
         try:
             file_info = input.file1()[0]
             data.set(pd.read_csv(file_info["datapath"]))
-            response = generate_shiny_app_code(input.description(), data(), input.use_pygwalker())
-            full_response.set(response)  # Store the full response
-            code = extract_and_clean_python_code(response)  # Extract the Python code for download
-            file_name = file_info["name"].rsplit('.', 1)[0] + "_app.py"
-            generated_file_path.set(file_name)
-            with open(file_name, 'w') as file:
-                file.write(code)
-            return response  # Display the full response, including explanations
+            response = generate_tableau_like_streamlit_code(input.description(), data(), input.use_pygwalker())
+            code = extract_and_clean_python_code(response)
+            processed_code = post_process_code(code)
+            generated_code.set(processed_code)
+
+            # Save the generated code to a temporary file for download
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".py")
+            temp_file.write(processed_code.encode())
+            temp_file.close()
+            generated_file_path.set(temp_file.name)
+
+            return processed_code
         except Exception as e:
             return f"An error occurred: {str(e)}"
         finally:
             loading.set(False)
             await session.send_custom_message("show_spinner", {"show": False})
 
-    # Function to describe the loaded data
     @output
     @render.text
     def app_description():
@@ -211,38 +248,30 @@ def server(input, output, session):
         - Columns: {', '.join(data().columns)}
         - Number of rows: {len(data())}
         
-        **App Description:**
-        - App based on the uploaded data and user-provided description.
+        **SpectraCore App Description:**
+        - Tableau-like Streamlit dashboard based on the uploaded data and user-provided description.
         - Features interactive data visualization with PyGWalker included: {'Yes' if input.use_pygwalker() else 'No'}.
         """
         return desc
 
-    # Function to render the dynamically generated app
     @output
     @render.ui
     @reactive.event(input.generate)
     async def dynamic_app():
         if data() is None:
-            return ui.p("Please upload a CSV file and generate the dashboard.")
+            return ui.p("Please upload a CSV file and generate the SpectraCore dashboard.")
+        return ui.pre(generated_code.get())
 
-        code = extract_and_clean_python_code(full_response())  # Use only the code part for execution
-
-        # Run the generated code in a new terminal
-        result = run_code_in_new_terminal(code)
-        return ui.p(result)
-
-    # Function to handle the download of the generated app code
     @output
-    @render.download()
+    @render.download(filename=lambda: os.path.basename(generated_file_path.get()))
     def download_app():
         if generated_file_path.get() is None:
             return None
-        # Download only the pure Python code extracted from the response
-        return generated_file_path.get()
+        with open(generated_file_path.get(), 'r') as file:
+            return file.read()
 
-# Create and run the app
 app = App(app_ui, server)
 
 if __name__ == "__main__":
-    print("Starting the Shiny app...")
+    print("Starting SpectraCore...")
     app.run(host="0.0.0.0", port=8050)

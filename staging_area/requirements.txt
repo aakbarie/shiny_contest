@@ -1,0 +1,6 @@
+pandas==1.5.3
+streamlit==1.26.0
+plotly==5.16.1
+shiny==0.2.0
+pygwalker==0.1.5  # Include only if PyGWalker is used
+langchain==0.0.276  # Version may vary based on your specific LangChain version
